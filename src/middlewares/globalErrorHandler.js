@@ -6,8 +6,10 @@ const globalErrorHandler = (error, req, res, next) => {
     path: req?.originalUrl,
     method: req?.method,
   });
-  res.status(error.statusCode || 500).json({
-    status: error.statusText || httpStateText[500],
+  const isUploadError = error.name === "MulterError";
+  const statusCode = error.statusCode || (isUploadError ? 400 : 500);
+  res.status(statusCode).json({
+    status: error.statusText || httpStateText[statusCode] || httpStateText[500],
     message: error.message,
     data: null,
   });
