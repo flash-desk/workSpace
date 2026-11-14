@@ -1,13 +1,8 @@
-# Dependencies
 node_modules/
-
-# Environment variables and secrets
+dist/
+build/
 .env
 .env.*
 !.env.example
+.DS_Store
 
-# Logs
-logs/
-
-# Uploads
-uploads/
