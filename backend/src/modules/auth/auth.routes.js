@@ -1,7 +1,7 @@
 import express from "express";
 const router = express.Router();
 
-import { registerSchema } from "./auth.validation.js";
+import { registerSchema, googleAuthSchema } from "./auth.validation.js";
 import validate from "../../middlewares/validate.js";
 import authenticate from "../../middlewares/authenticate.js";
 import uploadMemory from "../../middlewares/uploadMemory.js";
@@ -10,6 +10,7 @@ import {
   register,
   activateAccount,
   login,
+  googleLogin,
   refreshToken,
   logout,
   logoutAll,
@@ -25,6 +26,7 @@ router.route("/register").post(
 );
 router.route("/activate-account").get(activateAccount);
 router.route("/login").post(login); // to do add limiters to login route to prevent brute-force attacks
+router.route("/google").post(validate(googleAuthSchema), googleLogin);
 router.route("/refresh").post(refreshToken);
 router.route("/logout").post(authenticate, logout);
 router.route("/logout-all").post(authenticate, logoutAll);

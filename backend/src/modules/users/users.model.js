@@ -24,9 +24,24 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: [true, "password is required"],
+      required: [
+        function () {
+          return this.authProvider === "local";
+        },
+        "password is required",
+      ],
       select: false,
-    }, 
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
     phone: {
       type: String,
       trim: true,
@@ -70,8 +85,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-
-
     passwordChangedAt: {
       type: Date,
       default: null,

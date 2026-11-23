@@ -14,6 +14,7 @@ import {
   rotateRefreshToken,
   revokeTokenFamily,
   revokeAllUserTokens,
+  verifyGoogleIdToken,
 } from "./auth.service.js";
 import logger from "../../utils/logger.js";
 import userRoles from "../../utils/roles.js";
@@ -31,7 +32,7 @@ import {
   isValidMongoId,
 } from "../../utils/validations.js";
 
-// account-locking policy 
+// account-locking policy
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -54,7 +55,7 @@ const register = catchAsync(async (req, res, next) => {
     );
     return next(error);
   }
-  
+
   if (!isValidGmail(email)) {
     return next(
       AppError.create(
@@ -211,12 +212,23 @@ const login = catchAsync(async (req, res, next) => {
       ),
     );
   }
+
+  if (!user.passwordHash) {
+    return next(
+      AppError.create(
+        "This account uses Google Sign-In. Please continue with Google",
+        400,
+        httpStateText[400],
+      ),
+    );
+  }
+
   const matchedPassword = await bcrypt.compare(password, user.passwordHash);
   if (!matchedPassword) {
     user.failedLoginAttempts += 1;
     if (user.failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
       user.lockedUntil = new Date(Date.now() + LOCK_DURATION_MS);
-    } 
+    }
     await user.save();
     return next(
       AppError.create("Invalid email or password", 401, httpStateText[401]),
@@ -228,6 +240,92 @@ const login = catchAsync(async (req, res, next) => {
   user.lockedUntil = null;
   user.lastLoginAt = new Date();
   await user.save();
+
+  const { accessToken, refreshToken } = await issueAuthTokens(user, {
+    userAgent: req.get("User-Agent"),
+    ip: req.ip,
+  });
+
+  res.cookie("refreshToken", refreshToken, refreshTokenCookieOptions);
+
+  const userObj = sanitizeUser(user);
+
+  return res.status(200).json({
+    status: httpStateText[200],
+    data: { user: userObj },
+    accessToken,
+  });
+});
+
+const googleLogin = catchAsync(async (req, res, next) => {
+  const { idToken } = req.body;
+  if (!idToken) {
+    return next(
+      AppError.create("Google ID token is required", 400, httpStateText[400]),
+    );
+  }
+
+  let payload;
+  try {
+    payload = await verifyGoogleIdToken(idToken);
+  } catch (error) {
+    return next(
+      AppError.create("Invalid or expired Google token", 401, httpStateText[401]),
+    );
+  }
+
+  const {
+    sub: googleId,
+    email,
+    given_name,
+    family_name,
+    picture,
+    email_verified,
+  } = payload;
+
+  if (!email_verified) {
+    return next(
+      AppError.create("Google email is not verified", 400, httpStateText[400]),
+    );
+  }
+
+  let user = await User.findOne({ email });
+
+  if (user) {
+    if (!user.isActive) {
+      return next(
+        AppError.create(
+          "This account has been deactivated",
+          403,
+          httpStateText[403],
+        ),
+      );
+    }
+
+    if (!user.googleId) {
+      user.googleId = googleId;
+    }
+    if (!user.avatarUrl && picture) {
+      user.avatarUrl = picture;
+    }
+    user.isEmailVerified = true;
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = null;
+    user.lastLoginAt = new Date();
+    await user.save();
+  } else {
+    user = await User.create({
+      firstName: given_name || email.split("@")[0],
+      lastName: family_name || "User",
+      email,
+      googleId,
+      avatarUrl: picture || null,
+      authProvider: "google",
+      role: userRoles.CUSTOMER,
+      isEmailVerified: true,
+      lastLoginAt: new Date(),
+    });
+  }
 
   const { accessToken, refreshToken } = await issueAuthTokens(user, {
     userAgent: req.get("User-Agent"),
@@ -470,6 +568,7 @@ export {
   register,
   activateAccount,
   login,
+  googleLogin,
   refreshToken,
   logout,
   logoutAll,
