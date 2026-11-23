@@ -1,15 +1,25 @@
+import { OAuth2Client } from "google-auth-library";
 import { generateAccessToken } from "../../utils/generateJWT.js";
 import RefreshToken from "./models/refreshToken.model.js";
 import { sha256, generateOpaqueToken } from "../../utils/hash.js";
 
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+export const verifyGoogleIdToken = async (idToken) => {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  return ticket.getPayload();
+};
 
 export const issueAuthTokens = async (user, meta = {}) => {
   const accessToken = generateAccessToken({
     email: user.email,
     id: user._id,
     role: user.role,
-  }); // access is regenerated 
+  }); // access is regenerated
 
   const rawRefreshToken = generateOpaqueToken();
   const family = generateOpaqueToken(16);
@@ -21,7 +31,7 @@ export const issueAuthTokens = async (user, meta = {}) => {
     userAgent: meta.userAgent || null,
     ip: meta.ip || null,
     expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
-  }); // store session data 
+  }); // store session data
 
   return { accessToken, refreshToken: rawRefreshToken };
 };
@@ -46,14 +56,12 @@ export const rotateRefreshToken = async (tokenDoc) => {
   return rawRefreshToken;
 }; // new refresh token
 
-
 export const revokeTokenFamily = async (family) => {
   await RefreshToken.updateMany(
     { family, revokedAt: null },
     { revokedAt: new Date() },
   );
 };
-
 
 export const revokeAllUserTokens = async (userId) => {
   await RefreshToken.updateMany(

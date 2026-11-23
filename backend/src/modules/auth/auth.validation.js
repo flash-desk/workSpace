@@ -7,3 +7,10 @@ export const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8),
 });
+
+export const googleAuthSchema = z.object({
+  idToken: z
+    .string({ required_error: "Google ID token is required" })
+    .trim()
+    .min(1),
+});
